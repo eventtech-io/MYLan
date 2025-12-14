@@ -26,174 +26,229 @@ By the end, engineers will learn not only how to stand up a local DHCP environme
 ---------------------------------------------------------------------------------------------------
 
 -----------------------------------------------------------------------------------------------------
-Educational Guide: Building a Portable DHCP Server for Field Engineers -FULL-
+DHCP Field Server
 
-Networking can be confusing at the best of times—especially when you’re just trying to get devices talking to each other in a controlled setup, like at a live show or a small lab environment. This guide explains, step by step, how and why we built a custom DHCP (Dynamic Host Configuration Protocol) server that runs directly from a laptop, without needing enterprise tools or IT permissions.
+Educational Guide & Technical Reference
 
-1. Why Build Our Own DHCP Server?
-Most Windows DHCP solutions are designed for enterprise environments. They often require domain integration, administrator configuration, or centralized infrastructure. This isn’t practical for field engineers who simply need quick, reliable configuration in places like:
+1. Introduction
 
-Audio-over-IP and Dante networks
-Lighting control desks and show controllers
-Raspberry Pi and embedded systems setups
-Temporary event networks or broadcast racks
+The DHCP Field Server is a Windows Presentation Foundation (WPF) application designed for network administrators and field technicians who need a portable, easy-to-use DHCP server for temporary network deployments, testing environments, or isolated networks.
+This application provides a complete DHCP server implementation that can automatically configure network clients with IP addresses, subnet masks, gateway addresses, and DNS server information.
 
-The goal is a portable DHCP app that:
-Runs on any laptop, even offline
-Sets a static IP of 192.168.1.1 automatically
-Shows real-time logs so engineers can confirm it’s working
-Assigns predictable IP ranges (192.168.1.50–150)
-Operates in what we call “Field Engineer Mode”: select a network, click Start, and everything configures itself.
+1.1 Key Features
+•	Simple graphical interface - No complex configuration files
+•	Automatic IP configuration - Sets static IP on selected network adapter
+•	Real-time logging - Monitor DHCP requests and responses
+•	Lease management - Tracks active IP assignments
+•	Portable deployment - Perfect for field work and testing
 
-This design means faster setup, fewer configuration errors, and no more waiting for IT-managed DHCP services.
+1.2 Typical Use Cases
+•	Setting up temporary networks at events or job sites
+•	Testing network equipment in isolated environments
+•	Educational demonstrations of DHCP protocol
+•	Emergency network recovery scenarios
+•	Development and testing of networked applications
 
-2. Setting the NIC Static with netsh
-Before the server can hand out addresses, the laptop must take control of its network adapter. The app sets your chosen interface (like a USB Ethernet dongle) to:
 
-IP: 192.168.1.1
-Subnet mask: 255.255.255.0
+2. Understanding DHCP
+Dynamic Host Configuration Protocol (DHCP) is a network management protocol that automatically assigns IP addresses and other network configuration parameters to devices on a network.
 
-It does this through a Windows command-line tool called netsh. Behind the scenes, this runs something like:
+2.1 The DHCP Process (DORA)
+DHCP uses a four-step process known as DORA:
+1.	Discover - Client broadcasts a request to find available DHCP servers
+2.	Offer - Server responds with an available IP address and configuration
+3.	Request - Client requests the offered IP address
+4.	Acknowledge - Server confirms the IP assignment (lease)
 
-netsh interface ip set address "Ethernet 2" static 192.168.1.1 255.255.255.0
+2.2 DHCP Message Types
+The application handles the following DHCP message types:
+Message Type	Description
+DISCOVER (1)	Client broadcasts to locate available servers
+OFFER (2)	Server offers an IP address to the client
+REQUEST (3)	Client requests the offered IP address
+ACK (5)	Server acknowledges and confirms the lease
 
-Key points:
-netsh configures Windows network adapters directly.
+2.3 DHCP Options
+DHCP options provide additional configuration parameters. This server provides:
+Option	Name	Default Value
+1	Subnet Mask	255.255.255.0
+3	Router/Gateway	192.168.1.1
+6	DNS Server	8.8.8.8 (Google DNS)
+51	Lease Time	8 hours (28,800 seconds)
+53	Message Type	DISCOVER, OFFER, REQUEST, ACK
+54	Server Identifier	192.168.1.1
 
-The app must run with Administrator rights.
 
-Logs from netsh are captured for transparency and troubleshooting.
+3. Application Architecture
+The DHCP Field Server is built using a modular architecture with clear separation of concerns. The application consists of four main components:
 
-This ensures the laptop always starts from a known and predictable network state—a crucial factor in event networks where random addressing (like 169.254.x.x) can break control systems.
+3.1 Component Overview
+Component	Responsibility
+MainWindow	User interface and event handling
+DhcpServer	Core DHCP protocol implementation
+NetworkHelper	Network adapter configuration using netsh commands
+DhcpLease	Data structure for tracking IP address leases
 
-3. Discovering Network Interfaces (NICs)
-The application scans the system for usable network adapters using NetworkInterface.GetAllNetworkInterfaces(). From that list, it filters out:
+3.2 DhcpServer Class
+The DhcpServer class is the heart of the application. It implements the complete DHCP server functionality:
+Key Properties
+•	_serverIp: The IP address of the DHCP server itself (192.168.1.1)
+•	_poolStart, _poolEnd: Define the range of IP addresses available for lease
+•	_subnetMask: Network subnet mask (255.255.255.0)
+•	_routerIp: Default gateway address provided to clients
+•	_dnsIp: DNS server address (8.8.8.8 - Google Public DNS)
+•	_leases: Dictionary storing active leases by MAC address
+Core Methods
+•	Start(): Creates UDP socket on port 67 and starts listening thread
+•	Stop(): Gracefully shuts down the server and releases resources
+•	ListenLoop(): Main message processing loop, handles incoming DHCP packets
+•	GetOrCreateLease(): Assigns IP addresses and manages the lease pool
+•	BuildReplyPacket(): Constructs DHCP response packets with options
+•	SendBroadcast(): Transmits responses to UDP port 68
 
-Loopback interfaces (used internally by the OS)
-Virtual or tunnel adapters (VPNs, for instance)
-Adapters that are disabled or disconnected
+3.3 Network Configuration
+The application configures the following network parameters:
+Parameter	Value
+Server IP Address	192.168.1.1
+Subnet Mask	255.255.255.0
+DHCP Pool Start	192.168.1.50
+DHCP Pool End	192.168.1.150
+Available Addresses	101 IP addresses
+Default Gateway	192.168.1.1 (server itself)
+DNS Server	8.8.8.8 (Google Public DNS)
+Lease Duration	8 hours
 
-This leaves you with only the real, active ports—like onboard Ethernet or connected USB LAN adapters—ready for selection.
 
-This step ensures users don’t need to troubleshoot Windows Device Manager just to find the correct port.
+4. How to Use the Application
 
-4. The Simple WPF Interface
-The app’s interface is minimal by design, built in WPF (Windows Presentation Foundation). It includes:
+4.1 Prerequisites
+•	Administrator privileges - Required to configure network adapters and bind to port 67
+•	Windows operating system - Built as a WPF application for Windows
+•	.NET Framework - Runtime environment for the application
+•	Available network adapter - Physical or virtual network interface
 
-A dropdown to select your network adapter
-Start and Stop buttons
-A live log window
-A simple status display
+4.2 Step-by-Step Guide
+5.	Launch the application - Right-click and select "Run as Administrator"
+6.	Select network adapter - Choose the adapter to use from the dropdown menu
+7.	Click Start - Application will configure the adapter and start the DHCP server
+8.	Monitor activity - Watch the log window for DHCP requests and responses
+9.	Connect clients - Configure client devices to obtain IP addresses automatically
+10.	Click Stop - When finished, stop the server to release the port
 
-Example layout:
+4.3 Understanding the Interface
+•	Server NIC dropdown - Lists available network adapters
+•	Start/Stop buttons - Control server operation
+•	Status indicator - Shows current server state (Idle, Running, or Stopped)
+•	Log window - Displays real-time DHCP activity with timestamps
 
-[ Select Network Adapter ▼ ]
-[ Start DHCP Server ] [ Stop DHCP Server ]
-Status: DHCP Running
-Log Output:
-DISCOVER from MAC...
-ACK sent...
-This simplicity matters. Field engineers don’t need overly technical dashboards; they need visual confirmation that the network tool is running effectively.
 
-5. The DHCP Server Workflow
-Once you press “Start”:
+5. Technical Implementation Details
 
-The selected NIC is confirmed.
-The app applies the static IP via netsh.
-If this succeeds, the DHCP engine is launched.
+5.1 DHCP Packet Structure
+DHCP uses the BOOTP message format. The packet consists of:
+•	Fixed Header (236 bytes) - Contains operation type, transaction ID, client/server addresses
+•	Magic Cookie (4 bytes) - Value: 99.130.83.99 (identifies DHCP packet)
+•	Options (variable) - Configuration parameters and message type
 
-The app then starts a lightweight DHCP process with defined parameters:
+5.2 Lease Management Algorithm
+The GetOrCreateLease method implements a simple but effective lease management strategy:
+11.	Check for existing lease - If MAC address has active lease, return that IP
+12.	Search for available IP - Iterate through pool from start to end
+13.	Skip reserved IPs - Check if IP is currently leased to another device
+14.	Assign and record - Create lease entry with 8-hour expiration
+15.	Handle exhaustion - Throw exception if no IPs available
 
-Server IP: 192.168.1.1
-IP Pool: 192.168.1.50 – 192.168.1.150
-Subnet: 255.255.255.0
-#Default Gateway: 192.168.1.1
-#DNS: 8.8.8.8
+5.3 Network Adapter Configuration
+The application uses the Windows netsh command to configure network adapters:
+netsh interface ip set address "AdapterName" static 192.168.1.1 255.255.255.0
+This command:
+•	Sets the adapter to static IP configuration
+•	Assigns IP address 192.168.1.1
+•	Sets subnet mask to 255.255.255.0
 
-From this point, the laptop acts as the network’s DHCP authority, ready to issue addresses.
 
-6. The DHCP Protocol in Action
-DHCP operates on two key ports:
+6. Troubleshooting
 
-UDP port 67 (server)
+6.1 Common Issues
+"Failed to set static IP"
+•	Cause: Application not running with administrator privileges
+•	Solution: Right-click the application and select "Run as Administrator"
+"No DHCP responses"
+•	Cause: Windows Firewall blocking UDP port 67 or 68
+•	Solution: Add firewall exception for the application or temporarily disable firewall for testing
+"IP pool exhausted"
+•	Cause: More than 101 clients requesting addresses
+•	Solution: Wait for leases to expire or restart the server to clear old leases
+"Clients not receiving configuration"
+•	Cause: Client and server on different physical networks or VLANs
+•	Solution: Ensure clients are connected to the same network segment as the server adapter
 
-UDP port 68 (client)
+6.2 Diagnostic Tips
+•	Monitor the log window for DISCOVER messages - this confirms clients are broadcasting
+•	Use Wireshark to capture DHCP traffic on both server and client
+•	Verify the selected network adapter is connected and has link
+•	Check Windows Event Viewer for network-related errors
+•	Test with a single client first before connecting multiple devices
 
-The server listens for broadcast “DISCOVER” messages from devices that need an IP address. When it receives one, it responds with an “OFFER.” The client then sends a “REQUEST,” and the server finalizes it with an “ACK.”
 
-These simple exchanges—DISCOVER, OFFER, REQUEST, ACK—power almost every device that connects to a network.
+7. Security Considerations
 
-7. Managing IP Leases
-The server tracks each device using its MAC address. A small in-memory database (dictionary) stores:
+7.1 Security Warnings
+•	No authentication - Any client can request an IP address
+•	No encryption - DHCP communication is unencrypted
+•	Broadcast responses - Server configuration visible to all network devices
+•	Rogue server risk - Could conflict with legitimate DHCP servers
 
-Device MAC
-Assigned IP
-Lease time
+7.2 Best Practices
+•	Use on isolated networks only - Avoid running on production networks
+•	Physical network separation - Use dedicated hardware for test environments
+•	Limit lease duration - Current 8-hour lease time is reasonable for temporary use
+•	Monitor for conflicts - Watch for duplicate IP warnings on clients
+•	Document usage - Keep records of when and where the server was deployed
 
-When a new device joins, the app checks this list:
-If it’s seen before, it renews the same IP.
-If not, it gives the next one in the range (192.168.1.50 onward).
 
-This ensures devices keep predictable IPs, maintaining stable routing for control and audio systems.
+8. Code Examples and Extensions
 
-8. Building DHCP Packets by Hand
-This section offers deep educational value. Each DHCP response must be built byte by byte, following the BOOTP (Bootstrap Protocol) structure.
+8.1 Customizing Network Parameters
+To modify the IP address range, edit the DhcpServer instantiation in MainWindow.xaml.cs:
+_server = new DhcpServer(
+    serverIpAddress: "10.0.0.1",
+    poolStart: "10.0.0.100",
+    poolEnd: "10.0.0.200",
+    subnetMask: "255.255.255.0",
+    routerIp: "10.0.0.1",
+    dnsIp: "1.1.1.1");  // Cloudflare DNS
 
-Each packet includes:
+8.2 Changing Lease Duration
+To modify lease duration, edit the GetOrCreateLease method in DhcpServer.cs:
+var newLease = new DhcpLease
+{
+    Mac = mac,
+    Ip = candidate,
+    Expiry = DateTime.Now.AddHours(24)  // 24-hour lease
+};
+Remember to also update the lease time option in BuildReplyPacket method (Option 51).
 
-Operation code (BOOTREPLY = 2)
-Client’s MAC address
-Assigned IP address
-“Magic cookie” that identifies the packet as DHCP
-Option fields describing the configuration (DNS, subnet mask, gateway, etc.)
+8.3 Adding Lease Persistence
+Currently, leases are stored in memory and lost when the server stops. To add persistence, consider:
+•	Serializing the _leases dictionary to JSON or XML on shutdown
+•	Loading saved leases on startup
+•	Implementing periodic saves during operation
+•	Adding lease reservation functionality for specific MAC addresses
 
-By manually constructing these packets, learners see how network configuration data is encoded, sent, and interpreted. It reveals why network misbehavior happens and how tools like Wireshark decode it.
+9. Conclusion
+The DHCP Field Server provides a practical, educational implementation of the DHCP protocol. It serves as both a functional tool for network administrators and a learning resource for understanding how DHCP works at a technical level.
+Key takeaways from this guide:
+•	DHCP automates IP address assignment using a four-step process (DORA)
+•	The application uses UDP broadcast communication on ports 67 and 68
+•	Lease management ensures efficient use of the IP address pool
+•	Security considerations limit deployment to isolated test networks
+•	The modular architecture makes it easy to extend and customize
 
-9. Real-Time Logging
-Every event—like receiving DISCOVER or sending ACK—is logged in real time to the UI. This gives engineers instant visibility into the process:
-
-DISCOVER from 00-1A-2B-3C-4D-5E
-OFFER 192.168.1.51
-REQUEST from 00-1A-2B-3C-4D-5E
-ACK sent
-This mirrors how professional debugging tools work but within an easy-to-use interface.
-
-10. Supporting Application Files
-Under the hood, the app is built on modern .NET with WPF support. Key files include:
-
-App.xaml and App.xaml.cs – Entry point and startup logic
-MainWindow.xaml – Defines the UI
-ThemeInfo.cs – WPF resource behaviors
-.csproj – Project configuration (net8.0-windows, UseWPF=true)
-Targeting .NET 8 ensures smooth performance and compatibility with current Windows platforms.
-
-11. Putting It All Together
-The full process looks like this:
-
-User selects a network adapter.
-App applies static IP (192.168.1.1).
-Server starts listening on UDP port 67.
-Client devices broadcast DISCOVER.
-Server issues OFFER and ACK messages.
-Devices receive IP configurations.
-
-The result:
-
-Audio and control networks stabilize.
-Dante nodes become visible.
-Lighting controllers connect.
-Embedded devices boot with valid IPs.
-This solves the most common source of field network chaos: unpredictable addressing.
-
-12. Educational Takeaways
-By walking through this project, students and new engineers learn how to:
-
-Configure network interfaces using system commands
-Understand how DHCP functions at protocol level
-Build GUI tools for practical field use
-Debug live network problems effectively
-
-Appreciate how low-level networking concepts apply in real-world productions
-
-Understanding DHCP this way transforms engineers from “users of networks” into “managers of networks,” giving them the confidence to troubleshoot and design stable setups everywhere they work.
-
+9.1 Further Learning
+To deepen your understanding of DHCP and network protocols:
+•	Study RFC 2131 (DHCP) and RFC 2132 (DHCP Options)
+•	Experiment with packet capture tools like Wireshark
+•	Compare with production DHCP servers (ISC DHCP, Windows DHCP)
+•	Implement additional DHCP options (NTP servers, domain name, etc.)
+•	Explore DHCPv6 for IPv6 networks
